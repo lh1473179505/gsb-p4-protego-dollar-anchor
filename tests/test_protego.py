@@ -475,6 +475,59 @@ class TestProtego:
         assert rp.can_fetch("http://foo.bar/foo/bar/", "FooBot")
         assert rp.can_fetch("http://foo.bar/foo/bar/baz", "FooBot")
 
+    def test_dollar_end_anchor_and_literal_dollar_rule(self):
+        content = "User-agent: *\nDisallow: /a$"
+        rp = Protego.parse(content=content)
+
+        assert not rp.can_fetch("https://site.local/a", "*")
+        assert rp.can_fetch("https://site.local/a/", "*")
+        assert rp.can_fetch("https://site.local/ab", "*")
+
+        # The companion "%24" rule keeps literal-dollar URLs covered without
+        # weakening the end-anchor rule itself.
+        assert not rp.can_fetch("https://site.local/a$", "*")
+        assert not rp.can_fetch("https://site.local/a%24", "*")
+        assert not rp.can_fetch("https://site.local/a%24suffix", "*")
+
+        rule_set = rp._user_agents["*"]
+        assert [(rule.field, rule.value._pattern) for rule in rule_set._rules] == [
+            ("disallow", "/a%24"),
+            ("disallow", "/a$"),
+        ]
+
+    def test_literal_dollar_in_the_middle_of_a_path(self):
+        content = "User-agent: *\nDisallow: /price$usd"
+        rp = Protego.parse(content=content)
+
+        assert not rp.can_fetch("https://site.local/price$usd", "*")
+        assert not rp.can_fetch("https://site.local/price%24usd", "*")
+        assert rp.can_fetch("https://site.local/price", "*")
+        assert rp.can_fetch("https://site.local/priceusd", "*")
+
+        # Normalization makes the raw and encoded spellings the same rule;
+        # neither spelling must be treated as an end anchor.
+        rule_set = rp._user_agents["*"]
+        assert [(rule.field, rule.value._pattern) for rule in rule_set._rules] == [
+            ("disallow", "/price%24usd"),
+        ]
+
+    def test_index_html_directory_anchor_is_not_expanded(self):
+        content = "User-agent: *\nDisallow: /\nAllow: /folder/index.html"
+        rp = Protego.parse(content=content)
+
+        assert rp.can_fetch("https://site.local/folder/index.html", "*")
+        assert rp.can_fetch("https://site.local/folder/", "*")
+        assert not rp.can_fetch("https://site.local/folder/page", "*")
+        assert not rp.can_fetch("https://site.local/folder/$", "*")
+        assert not rp.can_fetch("https://site.local/folder/%24", "*")
+
+        rule_set = rp._user_agents["*"]
+        assert [(rule.field, rule.value._pattern) for rule in rule_set._rules] == [
+            ("allow", "/folder/index.html"),
+            ("allow", "/folder/$"),
+            ("disallow", "/"),
+        ]
+
     def test_unicode_url_and_useragent(self):
         content = """
         User-Agent: *

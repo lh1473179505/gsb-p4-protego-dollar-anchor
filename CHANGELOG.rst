@@ -5,6 +5,12 @@ Protego changelog
 0.x.x (unreleased)
 ==================
 
+-   Clarified and hardened ``$`` handling in ``Allow`` and ``Disallow`` rules:
+    a trailing ``$`` remains an exact end anchor, a literal ``$`` elsewhere is
+    normalized consistently with ``%24``, duplicate normalized rules are not
+    registered, and the internal directory anchor derived from an allowed
+    ``index.html`` is not expanded as a literal-dollar rule.
+
 -   **Backward-incompatible:** ``Protego.parse()`` now raises a more suitable
     ``TypeError`` instead of a ``ValueError`` when ``content`` is not a string.
 

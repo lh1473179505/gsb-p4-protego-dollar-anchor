@@ -39,6 +39,7 @@ class _RuleSet:
     def __init__(self, parser_instance: Protego):
         self.user_agent: str | None = None
         self._rules: list[_Rule] = []
+        self._rule_keys: set[tuple[str, str]] = set()
         self._plain_prefixes: tuple[str, ...] | None = None
         self._special_rules: list[_Rule] = []
         self._crawl_delay: float | None = None
@@ -78,33 +79,86 @@ class _RuleSet:
             cache[pattern] = _URLPattern(quoted) if quoted else None
         return cache[pattern]
 
-    def allow(self, pattern: str) -> None:
-        if "$" in pattern:
-            self.allow(pattern.replace("$", _hexescape("$")))
+    def _append_rule(
+        self,
+        field: str,
+        url_pattern: _URLPattern,
+        *,
+        expand_literal_dollar: bool = True,
+    ) -> None:
+        """Append a normalized rule, ignoring an equivalent rule already present."""
+        key = (field, url_pattern._pattern)
+        if key in self._rule_keys:
+            return
+        self._rule_keys.add(key)
+        self._rules.append(_Rule(field=field, value=url_pattern))
 
+        # A terminating "$" is an end anchor. The equivalent "%24" value is
+        # kept as a separate, non-anchored, literal-dollar rule.
+        if expand_literal_dollar and url_pattern._contains_dollar:
+            literal_pattern = self._url_pattern(
+                url_pattern._pattern[:-1] + _hexescape("$")
+            )
+            if literal_pattern is not None:
+                self._append_rule(
+                    field,
+                    literal_pattern,
+                    expand_literal_dollar=False,
+                )
+
+    def _add_rule(
+        self, field: str, pattern: str, *, expand_literal_dollar: bool = True
+    ) -> _URLPattern | None:
         url_pattern = self._url_pattern(pattern)
         if url_pattern is None:
+            return None
+
+        self._append_rule(
+            field,
+            url_pattern,
+            expand_literal_dollar=expand_literal_dollar,
+        )
+
+        # Robots.txt writers may use a literal "$" in a part that percent
+        # encoding leaves verbatim (for example a query). Normalization turns a
+        # literal "$" in the path into "%24", but register the encoded form
+        # explicitly as well so both spellings are covered in every part.
+        if expand_literal_dollar and "$" in pattern:
+            encoded_pattern = self._url_pattern(
+                pattern.replace("$", _hexescape("$"))
+            )
+            if encoded_pattern is not None:
+                self._append_rule(
+                    field,
+                    encoded_pattern,
+                    expand_literal_dollar=False,
+                )
+
+        return url_pattern
+
+    def allow(self, pattern: str) -> None:
+        url_pattern = self._add_rule("allow", pattern)
+        if url_pattern is None:
             return
-        self._rules.append(_Rule(field="allow", value=url_pattern))
 
         # If index.html is allowed, we interpret this as / being allowed too.
         page = "index.html"
         quoted = url_pattern._pattern
         if quoted.endswith(f"/{page}"):
-            # Add the rule directly; going through allow() would treat the
-            # "$" anchor as a literal dollar sign too.
-            self._rules.append(
-                _Rule(field="allow", value=_URLPattern(quoted.removesuffix(page) + "$"))
+            directory_pattern = self._url_pattern(
+                quoted.removesuffix(page) + "$"
             )
+            if directory_pattern is not None:
+                # This is an internal end anchor only; do not add a literal
+                # "/folder/%24" rule for it.
+                self._append_rule(
+                    "allow",
+                    directory_pattern,
+                    expand_literal_dollar=False,
+                )
 
     def disallow(self, pattern: str) -> None:
-        if "$" in pattern:
-            self.disallow(pattern.replace("$", _hexescape("$")))
-
-        url_pattern = self._url_pattern(pattern)
-        if url_pattern is None:
-            return
-        self._rules.append(_Rule(field="disallow", value=url_pattern))
+        self._add_rule("disallow", pattern)
 
     def finalize_rules(self) -> None:
         self._rules.sort(

@@ -71,6 +71,25 @@ Usage
    'http://example.co.in'
 
 
+Dollar signs in path rules
+--------------------------
+
+A ``$`` at the end of an ``Allow`` or ``Disallow`` value is an end anchor:
+``Disallow: /a$`` matches ``/a`` exactly, but not ``/a/`` or ``/ab``. Protego
+also registers the equivalent literal-dollar pattern, so the same rule covers
+``/a$`` and ``/a%24``.
+
+A ``$`` anywhere else is a literal character. For example,
+``Disallow: /price$usd`` is equivalent to ``Disallow: /price%24usd`` after
+URL normalization, matches both ``/price$usd`` and ``/price%24usd``, and does
+not act as an end anchor for ``/price``.
+
+As an existing special case, ``Allow: /folder/index.html`` also allows the
+canonical directory URL ``/folder/``. The internal ``/folder/$`` rule used for
+that purpose is only an end-anchor rule and is not expanded into a
+literal-dollar ``%24`` rule.
+
+
 Using Protego with Requests_:
 
 .. code-block:: pycon
