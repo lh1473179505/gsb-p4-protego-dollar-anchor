@@ -89,6 +89,26 @@ Using Protego with Requests_:
 .. _Requests: https://3.python-requests.org/
 
 
+Pattern matching
+================
+
+``Allow`` and ``Disallow`` values are URL path prefixes, with two special
+characters:
+
+-   ``*`` matches any sequence of characters, including none.
+-   ``$`` at the very end of a value anchors the match to the end of the
+    URL: ``Disallow: /a$`` blocks ``/a`` but neither ``/a/`` nor ``/ab``.
+
+A ``$`` anywhere else in a value is a literal dollar sign, equivalent to its
+percent-encoded spelling ``%24``: ``Disallow: /price$usd`` blocks both
+``/price$usd`` and ``/price%24usd``, and it is not treated as an end anchor.
+For the same reason, a value with a trailing anchor also blocks the literal
+dollar path: ``Disallow: /a$`` blocks ``/a%24`` in addition to the exact
+``/a``.
+
+Finally, ``Allow: /folder/index.html`` also allows ``/folder/``, through an
+additional rule anchored to the directory URL.
+
 Comparison
 ==========
 

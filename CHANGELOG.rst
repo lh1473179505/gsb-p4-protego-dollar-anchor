@@ -8,6 +8,13 @@ Protego changelog
 -   **Backward-incompatible:** ``Protego.parse()`` now raises a more suitable
     ``TypeError`` instead of a ``ValueError`` when ``content`` is not a string.
 
+-   Clarified the ``$`` semantics of ``Allow`` and ``Disallow`` values: a
+    trailing ``$`` is the end-of-URL anchor, a ``$`` anywhere else is a
+    literal dollar sign matching its ``%24`` spelling. A value whose dollar
+    signs are all literal no longer registers the same rule twice, and the
+    directory rule derived from ``Allow: …/index.html`` keeps its ``$``
+    anchor instead of being expanded into a ``%24`` literal rule.
+
 0.6.2 (2026-06-25)
 ==================
 

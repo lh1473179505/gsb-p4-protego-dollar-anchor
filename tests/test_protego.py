@@ -1296,6 +1296,60 @@ class TestProtego:
         assert not rp.can_fetch("http://foo.bar/x/abc$", "FooBot")
         assert not rp.can_fetch("http://foo.bar/x/abc%24", "FooBot")
 
+    def test_trailing_dollar_is_end_anchor(self):
+        """A trailing "$" anchors the match to the end of the URL, while an
+        extra "%24" rule keeps matching the literal dollar sign."""
+        content = "user-agent: FooBot\ndisallow: /a$\n"
+        rp = Protego.parse(content=content)
+        # The anchor matches only the exact URL.
+        assert not rp.can_fetch("http://foo.bar/a", "FooBot")
+        assert rp.can_fetch("http://foo.bar/a/", "FooBot")
+        assert rp.can_fetch("http://foo.bar/ab", "FooBot")
+        # The additional "%24" rule matches the literal dollar sign, however
+        # it is spelled in the URL.
+        assert not rp.can_fetch("http://foo.bar/a%24", "FooBot")
+        assert not rp.can_fetch("http://foo.bar/a$", "FooBot")
+        assert not rp.can_fetch("http://foo.bar/a%24bc", "FooBot")
+        # One rule per meaning: the "%24" one and the anchored one.
+        rule_set = rp._user_agents["foobot"]
+        patterns = [rule.value._pattern for rule in rule_set._rules]
+        assert patterns == ["/a%24", "/a$"]
+
+    def test_nonterminal_dollar_is_literal(self):
+        """A "$" in the middle of a pattern is a literal dollar sign, not an
+        end anchor, and matches its "%24" spelling without registering
+        duplicate rules."""
+        content = "user-agent: FooBot\ndisallow: /price$usd\n"
+        rp = Protego.parse(content=content)
+        assert not rp.can_fetch("http://foo.bar/price$usd", "FooBot")
+        assert not rp.can_fetch("http://foo.bar/price%24usd", "FooBot")
+        # Not an anchor: "/price" alone is fine, and so are mere extensions
+        # of the literal path.
+        assert rp.can_fetch("http://foo.bar/price", "FooBot")
+        assert rp.can_fetch("http://foo.bar/priceusdx", "FooBot")
+        assert not rp.can_fetch("http://foo.bar/price%24usd/x", "FooBot")
+        # The "%24" expansion and the quoted original are the same rule and
+        # must be registered only once.
+        rule_set = rp._user_agents["foobot"]
+        patterns = [rule.value._pattern for rule in rule_set._rules]
+        assert patterns == ["/price%24usd"]
+
+    def test_index_html_directory_rule_keeps_dollar_anchor(self):
+        """The directory rule derived from Allow: .../index.html uses a "$"
+        end anchor that must not be expanded into a "%24" literal rule."""
+        content = "user-agent: FooBot\nallow: /folder/index.html\ndisallow: /\n"
+        rp = Protego.parse(content=content)
+        assert rp.can_fetch("http://foo.bar/folder/index.html", "FooBot")
+        assert rp.can_fetch("http://foo.bar/folder/", "FooBot")
+        assert not rp.can_fetch("http://foo.bar/folder/other", "FooBot")
+        # The derived "/folder/$" rule anchors the directory URL; it must not
+        # allow paths with a literal dollar sign.
+        assert not rp.can_fetch("http://foo.bar/folder/$budget", "FooBot")
+        assert not rp.can_fetch("http://foo.bar/folder%24budget", "FooBot")
+        rule_set = rp._user_agents["foobot"]
+        patterns = sorted(rule.value._pattern for rule in rule_set._rules)
+        assert patterns == ["/", "/folder/$", "/folder/index.html"]
+
     def test_with_absolute_urls(self):
         content = "user-agent: *\ndisallow: http://ms-web00.walkerplus.com/\n"
 

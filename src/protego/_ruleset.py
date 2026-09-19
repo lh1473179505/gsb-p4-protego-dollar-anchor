@@ -78,33 +78,48 @@ class _RuleSet:
             cache[pattern] = _URLPattern(quoted) if quoted else None
         return cache[pattern]
 
-    def allow(self, pattern: str) -> None:
-        if "$" in pattern:
-            self.allow(pattern.replace("$", _hexescape("$")))
+    def _register_rule(self, field: str, pattern: str) -> _URLPattern | None:
+        """Register an allow/disallow rule, handling the two meanings of
+        ``$`` in a directive value.
+
+        A ``$`` at the very end of a value is the end-of-URL anchor; quoting
+        keeps it, so the pattern matches only the exact URL. A ``$`` anywhere
+        else is a literal dollar sign: quoting turns it into ``%24``. In that
+        case the same quoted pattern is reached by replacing every ``$`` with
+        ``%24`` and quoting that, so an additional rule is registered for the
+        percent-encoded spelling and the original one is not registered twice.
+        """
+        expanded = pattern.replace("$", _hexescape("$")) if "$" in pattern else ""
+        if expanded:
+            self._register_rule(field, expanded)
 
         url_pattern = self._url_pattern(pattern)
         if url_pattern is None:
+            return None
+        if expanded and "$" not in url_pattern._pattern:
+            # Quoting turned every "$" into "%24": this is exactly the rule
+            # the recursive call above registered. Do not duplicate it.
+            return url_pattern
+        self._rules.append(_Rule(field=field, value=url_pattern))
+        return url_pattern
+
+    def allow(self, pattern: str) -> None:
+        url_pattern = self._register_rule("allow", pattern)
+        if url_pattern is None:
             return
-        self._rules.append(_Rule(field="allow", value=url_pattern))
 
         # If index.html is allowed, we interpret this as / being allowed too.
         page = "index.html"
         quoted = url_pattern._pattern
         if quoted.endswith(f"/{page}"):
-            # Add the rule directly; going through allow() would treat the
-            # "$" anchor as a literal dollar sign too.
+            # Add the rule directly; going through _register_rule() would
+            # also expand the "$" anchor into a "%24" literal rule.
             self._rules.append(
                 _Rule(field="allow", value=_URLPattern(quoted.removesuffix(page) + "$"))
             )
 
     def disallow(self, pattern: str) -> None:
-        if "$" in pattern:
-            self.disallow(pattern.replace("$", _hexescape("$")))
-
-        url_pattern = self._url_pattern(pattern)
-        if url_pattern is None:
-            return
-        self._rules.append(_Rule(field="disallow", value=url_pattern))
+        self._register_rule("disallow", pattern)
 
     def finalize_rules(self) -> None:
         self._rules.sort(
